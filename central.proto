@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// ====================================
+//               ENUMS
+// ====================================
+enum ApprovalStatus {
+    APPROVED = 1;
+    CERTIFICATE_INVALID = 2;
+    CLIENT_NOT_AVAIBLE = 4;
+}
+
+// Simulates an empty message because protobuffer doesn't support void
+message EmptyMessage {}
+
+
+// Basic communication
+message PublicKey {
+    string public_key = 1;
+}
+
+message ConnectionRequest {
+    string encrypted_certificate = 1;
+    string public_key = 2;
+    string request_type = 3;
+    string adress = 4; // no need for encryption because of traffic sniffing will show destination anyway
+    string TTL = 5;
+}
+
+message ConnectionApproval {
+    ApprovalStatus approval_status = 1;
+    optional string encrypted_session_token = 2;
+}
+
+// ====================================
+//    Communication between clients
+// ====================================
+message DataWrapper { // can we make it for response also to authenticate client B response??
+    string content_type = 1;
+    string session_token = 2;
+    bytes payload = 3;
+}
+
+message DataWrapperResponse {
+    optional string content_type = 1;
+    optional bytes payload = 1;
+}
+
+// Services
+service CentralSystem {
+    rpc getPublicKey(EmptyMessage) returns (PublicKey) {}
+    rpc requestConnection(ConnectionRequest) returns (ConnectionApproval) {}
+}
+
+service ClientService {
+    rpc getPublicKey(EmptyMessage) returns (PublicKey) {}
+    rpc sendPayload(DataWrapper) returns (DataWrapperResponse) {}
+}
