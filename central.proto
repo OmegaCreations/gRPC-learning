@@ -6,7 +6,7 @@ syntax = "proto3";
 enum ApprovalStatus {
     APPROVED = 1;
     CERTIFICATE_INVALID = 2;
-    CLIENT_NOT_AVAIBLE = 4;
+    CLIENT_NOT_AVAIBLE = 3;
 }
 
 // Simulates an empty message because protobuffer doesn't support void
@@ -28,7 +28,20 @@ message ConnectionRequest {
 
 message ConnectionApproval {
     ApprovalStatus approval_status = 1;
-    optional string encrypted_session_token = 2;
+    optional string encrypted_certificate = 2;
+    optional string encrypted_session_token = 3;
+}
+
+message ACK {
+    string encrypted_certificate = 1;
+    string public_key = 2;
+}
+
+message NewConnectionData {
+    string encrypted_certificate = 1;
+    string encrypted_session_token = 2;
+    string request_type = 3;
+    string TTL = 4;
 }
 
 // ====================================
@@ -42,16 +55,24 @@ message DataWrapper { // can we make it for response also to authenticate client
 
 message DataWrapperResponse {
     optional string content_type = 1;
-    optional bytes payload = 1;
+    optional bytes payload = 2;
 }
 
-// Services
+// ====================================
+//              Services
+// ====================================
 service CentralSystem {
     rpc getPublicKey(EmptyMessage) returns (PublicKey) {}
     rpc requestConnection(ConnectionRequest) returns (ConnectionApproval) {}
 }
 
+// Implementation of Client's Listener. 
+// Allows CentralSystem or other Wrapper to request data.
 service ClientService {
-    rpc getPublicKey(EmptyMessage) returns (PublicKey) {}
+    // central system <-> client
+    rpc newConnection(PublicKey) returns (ACK) {}
+    rpc sendConnectionData(NewConnectionData) returns(EmptyMessage) {}
+
+    // client <-> client
     rpc sendPayload(DataWrapper) returns (DataWrapperResponse) {}
 }

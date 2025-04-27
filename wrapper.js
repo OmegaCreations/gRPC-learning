@@ -3,7 +3,6 @@ const protoLoader = require("@grpc/proto-loader");
 const crypto = require("crypto");
 
 // Outer classes imports
-import { ClientToClientConnection } from "./ClientToClient";
 import { Listener } from "./Listener";
 
 class gRPCSafeWrapper {
@@ -110,10 +109,10 @@ class gRPCSafeWrapper {
       TTL: TTL,
     };
 
-    const responseApproval = await new Promise((resolve, reject) => {
+    const connectionApproval = await new Promise((resolve, reject) => {
       this.#centralSystemClient.requestConnection(request, (err, response) => {
         if (err) {
-          return reject(reject("Connection request failed: " + err.message));
+          return reject("Connection request failed: " + err.message);
         }
         resolve(response);
       });
@@ -121,22 +120,22 @@ class gRPCSafeWrapper {
       .then((data) => data)
       .catch((e) => console.log(e));
 
-    if (responseApproval.approval_status === "APPROVED") {
-      console.log("[response approval]", responseApproval);
+    if (connectionApproval.approval_status === "APPROVED") {
+      console.log("[response approval]", connectionApproval);
 
       // create new connection
-      const newClient = new ClientToClientConnection(
-        address,
-        responseApproval.encrypted_session_token
+      const conn = this.#globalListener.create(
+        connectionApproval.encrypted_certificate,
+        connectionApproval.encrypted_session_token,
+        address
       );
-      listener.create(newClient);
-      return newClient;
+
+      return conn;
     } else {
-      console.log("[response approval error]", responseApproval);
+      console.log("[response approval error]", connectionApproval);
+      return null;
     }
   }
-
-  async createClientToClientConnection() {}
 }
 
 /// USAGE
@@ -146,4 +145,5 @@ const wrapper = new gRPCSafeWrapper(
   "PRIVATE_KEY1234",
   "1234"
 );
-wrapper.requestConnection("POST", "localhost:5053", "1d");
+
+const conn = wrapper.requestConnection("POST", "localhost:5053", "1d");

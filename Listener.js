@@ -1,3 +1,5 @@
+import { ClientToClientConnection } from "./ClientToClient";
+
 export class Listener {
   #openConnections = new Map();
   #port;
@@ -6,8 +8,15 @@ export class Listener {
     this.#port = listenerPort;
   }
 
-  create(newClient) {
-    this.#openConnections.set(newClient.getTargetAddress(), newClient);
-    newClient.initCommunication();
+  create(certificate, session_token, target_address) {
+    const newClient = new ClientToClientConnection(
+      certificate,
+      session_token,
+      target_address
+    );
+
+    this.#openConnections.set(session_token, newClient);
+
+    return newClient;
   }
 }
