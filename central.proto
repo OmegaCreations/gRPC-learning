@@ -9,6 +9,9 @@ enum ApprovalStatus {
     CLIENT_NOT_AVAIBLE = 3;
 }
 
+// ====================================
+//              MESSAGES
+// ====================================
 // Simulates an empty message because protobuffer doesn't support void
 message EmptyMessage {}
 
@@ -20,28 +23,14 @@ message PublicKey {
 
 message ConnectionRequest {
     string encrypted_certificate = 1;
-    string public_key = 2;
-    string request_type = 3;
+    string request_type = 2;
+    string TTL = 3;
     string adress = 4; // no need for encryption because of traffic sniffing will show destination anyway
-    string TTL = 5;
 }
 
 message ConnectionApproval {
     ApprovalStatus approval_status = 1;
-    optional string encrypted_certificate = 2;
-    optional string encrypted_session_token = 3;
-}
-
-message ACK {
-    string encrypted_certificate = 1;
-    string public_key = 2;
-}
-
-message NewConnectionData {
-    string encrypted_certificate = 1;
-    string encrypted_session_token = 2;
-    string request_type = 3;
-    string TTL = 4;
+    optional string encrypted_jwt_token = 2;
 }
 
 // ====================================
@@ -70,8 +59,7 @@ service CentralSystem {
 // Allows CentralSystem or other Wrapper to request data.
 service ClientService {
     // central system <-> client
-    rpc newConnection(PublicKey) returns (ACK) {}
-    rpc sendConnectionData(NewConnectionData) returns(EmptyMessage) {}
+    rpc sendConnectionData(ConnectionApproval) returns(EmptyMessage) {}
 
     // client <-> client
     rpc sendPayload(DataWrapper) returns (DataWrapperResponse) {}
