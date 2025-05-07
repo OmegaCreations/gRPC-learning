@@ -37,11 +37,6 @@ message ConnectionApproval {
 //    Communication between clients
 // ====================================
 message DataWrapper { // can we make it for response also to authenticate client B response??
-    string source_address = 1;
-    bytes payload = 2;
-}
-
-message DataWrapperResponse {
     optional bytes payload = 1;
 }
 
@@ -60,5 +55,5 @@ service ClientService {
     rpc sendConnectionData(ConnectionApproval) returns(EmptyMessage) {}
 
     // client <-> client
-    rpc sendPayload(DataWrapper) returns (DataWrapperResponse) {}
+    rpc sendPayload(DataWrapper) returns (DataWrapper) {}
 }

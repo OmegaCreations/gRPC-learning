@@ -1,3 +1,5 @@
+import { serializeRequest } from "./utils/DataManipulation";
+
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 
@@ -32,5 +34,27 @@ export class Connection {
       this.#targetAddress,
       credentials
     );
+  }
+
+  /**
+   * @description Sends data on opened channel
+   */
+  async send(data) {
+    const request = {
+      payload: serializeRequest(data),
+    };
+
+    const response = await new Promise((resolve, reject) => {
+      this.#channel.sendPayload(request, (err, response) => {
+        if (err) {
+          return reject("Sending data failed: " + err.message);
+        }
+        resolve(response);
+      });
+    })
+      .then((data) => data)
+      .catch((e) => console.log(e));
+
+    console.log(response);
   }
 }

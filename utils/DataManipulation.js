@@ -46,28 +46,24 @@ export const decryptDataWithPrivateKey = (encryptedData, privateKeyPem) => {
 /**
  * @description Serializes Json formatted request into binary payload
  */
-export const serializeRequest = (contentType, jsonData) => {
-  // 1. Zakoduj typ zawartości jako tekst
+export const serializeRequest = (
+  jsonData,
+  contentType = "application/json"
+) => {
   const encoder = new TextEncoder();
   const contentTypeBytes = encoder.encode(contentType);
 
-  // 2. Zakoduj dane JSON
+  // encode json
   const jsonString = JSON.stringify(jsonData);
   const jsonBytes = encoder.encode(jsonString);
 
-  // 3. Stwórz bufor z:
-  // - 1 bajt: długość typu zawartości
-  // - N bajtów: typ zawartości
-  // - reszta: dane JSON
+  // 1 byte -> type length
+  // N bytes -> type
+  // rest -> JSON data
   const buffer = new Uint8Array(1 + contentTypeBytes.length + jsonBytes.length);
 
-  // Długość typu zawartości (max 255 znaków)
   buffer[0] = contentTypeBytes.length;
-
-  // Typ zawartości
   buffer.set(contentTypeBytes, 1);
-
-  // Dane JSON
   buffer.set(jsonBytes, 1 + contentTypeBytes.length);
 
   return buffer.buffer;
@@ -80,23 +76,22 @@ export const deserializeRequest = (payload) => {
   const view = new Uint8Array(payload);
   const decoder = new TextDecoder();
 
-  // 1. Odczytaj długość typu zawartości
+  // 1. read length of content type
   const contentTypeLength = view[0];
 
-  // 2. Odczytaj typ zawartości
+  // 2. read content type
   const contentTypeBytes = view.slice(1, 1 + contentTypeLength);
   const contentType = decoder.decode(contentTypeBytes);
 
-  // 3. Odczytaj dane
+  // 3. read data
   const dataBytes = view.slice(1 + contentTypeLength);
   let data;
 
-  // Deserializacja w zależności od typu zawartości
+  // deserialization based on content type
   switch (contentType) {
     case "application/json":
       data = JSON.parse(decoder.decode(dataBytes));
       break;
-    // Możesz dodać obsługę innych typów
     default:
       throw new Error(`Unsupported content type: ${contentType}`);
   }
