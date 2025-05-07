@@ -38,7 +38,7 @@ message ConnectionApproval {
 // ====================================
 message DataWrapper { // can we make it for response also to authenticate client B response??
     string content_type = 1;
-    string jwt_token = 2;
+    string source_address = 2;
     bytes payload = 5;
 }
 

@@ -43,7 +43,7 @@ export class ConnectionManager {
 
     // 2. We bind listener to port and create insecure channel for incoming requests
     this.#listener.bindAsync(
-      `0.0.0.0:${this.#port}`,
+      `localhost:${this.#port}`,
       grpc.ServerCredentials.createInsecure(),
       (err, port) => {
         if (err) {
@@ -66,7 +66,7 @@ export class ConnectionManager {
   createSender(jwt_token, target_address) {
     const newClient = new Connection(jwt_token, target_address);
 
-    this.#openSendingConnections.set(jwt_token, newClient);
+    this.#openSendingConnections.set(target_address, newClient);
     return newClient;
   }
 
@@ -136,13 +136,13 @@ export class ConnectionManager {
    */
   #receivePayload(call, callback) {
     try {
-      const { content_type, jwt_token, payload } = call.request;
+      const { content_type, source_address, payload } = call.request;
 
       // 1. Check if connection is in opened channels
-      if (!this.#openReceivingConnections.get(jwt_token)) {
+      if (!this.#openReceivingConnections.get(source_address)) {
         console.log(
-          "Invalid connection: No opened channel for token: ",
-          jwt_token
+          "Invalid connection: No opened channel for address: ",
+          source_address
         );
         return;
       }
@@ -153,14 +153,9 @@ export class ConnectionManager {
       console.log("Deserialized payload:", deserializedPayload);
 
       // 3. Emit request processed by wrapper
-      this.emit("payload", {
-        payload,
-      });
 
       // 4. Process response to client
-      callback(null, {
-        //...
-      });
+      callback(null, {});
     } catch (err) {
       console.error("Error processing payload:", err);
       callback({
@@ -172,12 +167,12 @@ export class ConnectionManager {
   // ====================================
   //          UTILITIES
   // ====================================
-  getReceiverConnection(token) {
-    return this.#openReceivingConnections.get(token);
+  getReceiverConnection(source_address) {
+    return this.#openReceivingConnections.get(source_address);
   }
 
-  removeReceiverConnection(token) {
-    const connection = this.#openReceivingConnections.get(token);
+  removeReceiverConnection(source_address) {
+    const connection = this.#openReceivingConnections.get(source_address);
     if (connection) {
       connection.close();
       this.#openReceivingConnections.delete(token);
