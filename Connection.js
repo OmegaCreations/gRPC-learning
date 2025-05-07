@@ -4,39 +4,33 @@ const protoLoader = require("@grpc/proto-loader");
 // this client connection creates channel as a sender.
 // receiver instance is set up as a listener (Listener.js)
 export class Connection {
-  #targetCertificate;
-  #sessionToken;
+  #jwtToken;
   #targetAddress;
+  #requestType;
+  #TTL;
 
   #proto;
   #channel;
 
-  constructor(certificate, session_token, target_address) {
-    this.#targetCertificate = certificate;
-    this.#sessionToken = session_token;
-    this.#targetAddress = target_address;
+  constructor(targetAddress, jwtToken, requestType, TTL, credentials) {
+    this.#jwtToken = jwtToken;
+    this.#targetAddress = targetAddress;
+    this.#requestType = requestType;
+    this.#TTL = TTL;
 
-    // create channel as a sender
+    // 1. Create connection channel
     const packageDefinition = protoLoader.loadSync("service.proto");
     this.#proto = grpc.loadPackageDefinition(packageDefinition);
-    this.createChannel();
+    this.createChannel(credentials);
   }
 
-  // estabilishing connection
-  createChannel() {
+  /**
+   * @description Creates new channel for connection
+   */
+  createChannel(credentials) {
     this.#channel = new this.#proto.ClientService(
       this.#targetAddress,
-      grpc.credentials.createSsl
+      credentials
     );
   }
-
-  // Getters/Setters
-  getTargetAddress() {
-    return this.#targetAddress;
-  }
-
-  // sending data
-  async send() {}
-
-  async initCommunication() {}
 }

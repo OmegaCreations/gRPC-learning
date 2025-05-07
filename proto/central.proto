@@ -37,14 +37,12 @@ message ConnectionApproval {
 //    Communication between clients
 // ====================================
 message DataWrapper { // can we make it for response also to authenticate client B response??
-    string content_type = 1;
-    string source_address = 2;
-    bytes payload = 5;
+    string source_address = 1;
+    bytes payload = 2;
 }
 
 message DataWrapperResponse {
-    optional string content_type = 1;
-    optional bytes payload = 2;
+    optional bytes payload = 1;
 }
 
 // ====================================

@@ -63,7 +63,7 @@ class gRPCSafeWrapper {
   //           PRIVATE METHODS
   // ====================================
   /**
-   * @description Requests Central System for it's pulic key
+   * @description Requests Central System for it's public key
    */
   async #requestCentralPublicKey() {
     this.#centralPublicKey = await new Promise((resolve, reject) => {

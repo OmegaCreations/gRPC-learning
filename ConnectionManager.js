@@ -63,11 +63,23 @@ export class ConnectionManager {
   /**
    * @description Creates an instance of new sending connection from this client
    */
-  createSender(jwt_token, target_address) {
-    const newClient = new Connection(jwt_token, target_address);
+  #createSenderConnection(target_address, jwt_token, request_type, TTL) {
+    const credentials = this.#createSenderCredentials(jwt_token);
+    const connection = new Connection(
+      target_address,
+      jwt_token,
+      request_type,
+      TTL,
+      credentials
+    );
 
-    this.#openSendingConnections.set(target_address, newClient);
-    return newClient;
+    this.#openSendingConnections.set(target_address, connection);
+
+    return connection;
+  }
+
+  #createSenderCredentials(token) {
+    return grpc.credentials.createSsl(Buffer.from(token));
   }
 
   // ====================================
@@ -126,9 +138,7 @@ export class ConnectionManager {
    * @description Handles creation of new receiver gRPC credentials
    */
   #createReceiverCredentials(token) {
-    return grpc.credentials.combineChannelCredentials(
-      grpc.credentials.createSsl(Buffer.from(token))
-    );
+    return grpc.credentials.createSsl(Buffer.from(token));
   }
 
   /**
@@ -136,7 +146,7 @@ export class ConnectionManager {
    */
   #receivePayload(call, callback) {
     try {
-      const { content_type, source_address, payload } = call.request;
+      const { source_address, payload } = call.request;
 
       // 1. Check if connection is in opened channels
       if (!this.#openReceivingConnections.get(source_address)) {
