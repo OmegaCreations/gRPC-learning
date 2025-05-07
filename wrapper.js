@@ -1,12 +1,12 @@
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
-const crypto = require("crypto");
+import { encryptDataWithPublicKey } from "./utils/DataManipulation";
 
 // Outer classes imports
-import { Listener } from "./Listener";
+import { ConnectionManager } from "./ConnectionManager";
 
 class gRPCSafeWrapper {
-  // private data for service
+  // private data for this service
   #serviceCertificate;
   #publicKey;
   #privateKey;
@@ -17,8 +17,8 @@ class gRPCSafeWrapper {
   #centralPublicKey;
   #centralSystemAddress = "localhost:50051";
 
-  // listener for connections
-  #globalListener;
+  // Connection manager creates sender and receiver objects
+  #connectionManager;
 
   constructor(
     serviceCertificate,
@@ -53,10 +53,18 @@ class gRPCSafeWrapper {
     );
 
     // listener ------------------------------------------------
-    this.#globalListener = new Listener(listenerPort);
+    this.#connectionManager = new ConnectionManager(
+      listenerPort,
+      this.#serviceCertificate
+    );
   }
 
-  // private methods
+  // ====================================
+  //           PRIVATE METHODS
+  // ====================================
+  /**
+   * @description Requests Central System for it's pulic key
+   */
   async #requestCentralPublicKey() {
     this.#centralPublicKey = await new Promise((resolve, reject) => {
       this.#centralSystemClient.getPublicKey({}, (err, response) => {
@@ -68,31 +76,26 @@ class gRPCSafeWrapper {
       .catch((e) => console.log(e));
   }
 
-  #encryptDataWithPublicKey(data, publicKeyPem) {
-    console.log(data, publicKeyPem);
-    const bufferData = Buffer.from(data, "utf8");
-    const encrypted = crypto.publicEncrypt(
-      {
-        key: publicKeyPem,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: "sha256",
-      },
-      bufferData
-    );
-    return encrypted.toString("base64");
-  }
-
-  // public methods
+  // ====================================
+  //           PUBLIC METHODS
+  // ====================================
+  /**
+   * @description Requests a new client-client connection to Central System
+   */
   async requestConnection(requestType, address, TTL) {
-    try {
-      await this.#requestCentralPublicKey();
-    } catch (e) {
-      console.log(e);
+    // 1. Asks Central system for it's public key
+    if (!this.#centralPublicKey) {
+      try {
+        await this.#requestCentralPublicKey();
+      } catch (e) {
+        console.log(e);
+      }
     }
 
+    // 2. Encrypts it's certificatee
     let encryptedCertificate;
     try {
-      encryptedCertificate = this.#encryptDataWithPublicKey(
+      encryptedCertificate = encryptDataWithPublicKey(
         this.#serviceCertificate,
         this.#centralPublicKey
       );
@@ -101,15 +104,16 @@ class gRPCSafeWrapper {
       return;
     }
 
+    // 3. Create connection request object
     const request = {
       encrypted_certificate: encryptedCertificate,
-      public_key: this.#publicKey,
       request_type: requestType,
+      TTL: TTL, // TTL -> mostly time in days/weeks like '1d'
       adress: address,
-      TTL: TTL,
     };
 
-    const connectionApproval = await new Promise((resolve, reject) => {
+    // 4. Send connection request to Central System and wait for Approval with token
+    const newConnectionResponse = await new Promise((resolve, reject) => {
       this.#centralSystemClient.requestConnection(request, (err, response) => {
         if (err) {
           return reject("Connection request failed: " + err.message);
@@ -120,16 +124,22 @@ class gRPCSafeWrapper {
       .then((data) => data)
       .catch((e) => console.log(e));
 
-    if (connectionApproval.approval_status === "APPROVED") {
+    // 5. Check connection status
+    if (newConnectionResponse.approval_status === "APPROVED") {
       console.log("[response approval]", connectionApproval);
 
-      // create new connection
-      const conn = this.#globalListener.create(
-        connectionApproval.encrypted_certificate,
-        connectionApproval.encrypted_session_token,
+      // 6. Create new connection in connection manager
+      if (!newConnectionResponse.encrypted_jwt_token) {
+        console.log("Cannot receive security data from Central System");
+        return null;
+      }
+
+      const conn = this.#connectionManager.createSender(
+        connectionApproval.encrypted_jwt_token,
         address
       );
 
+      // 7. returns Connection object for user to manage
       return conn;
     } else {
       console.log("[response approval error]", connectionApproval);

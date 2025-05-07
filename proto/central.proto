@@ -29,7 +29,7 @@ message ConnectionRequest {
 }
 
 message ConnectionApproval {
-    ApprovalStatus approval_status = 1;
+    optional ApprovalStatus approval_status = 1;
     optional string encrypted_jwt_token = 2;
 }
 
@@ -38,8 +38,8 @@ message ConnectionApproval {
 // ====================================
 message DataWrapper { // can we make it for response also to authenticate client B response??
     string content_type = 1;
-    string session_token = 2;
-    bytes payload = 3;
+    string jwt_token = 2;
+    bytes payload = 5;
 }
 
 message DataWrapperResponse {

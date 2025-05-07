@@ -3,7 +3,7 @@ const protoLoader = require("@grpc/proto-loader");
 
 // this client connection creates channel as a sender.
 // receiver instance is set up as a listener (Listener.js)
-export class ClientToClientConnection {
+export class Connection {
   #targetCertificate;
   #sessionToken;
   #targetAddress;
