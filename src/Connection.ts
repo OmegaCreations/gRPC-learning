@@ -1,4 +1,5 @@
 import { serializeRequest } from "./utils/DataManipulation";
+import { RequestType } from "./wrapper";
 
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
@@ -6,32 +7,44 @@ const protoLoader = require("@grpc/proto-loader");
 // this client connection creates channel as a sender.
 // receiver instance is set up as a listener (Listener.js)
 export class Connection {
-  #jwtToken;
-  #targetAddress;
-  #requestType;
-  #TTL;
+  jwtToken: string;
+  targetAddress: string;
+  requestType: RequestType;
+  TTL: string;
+  clientCertificate: string | null;
 
   #proto;
   #channel;
 
-  constructor(targetAddress, jwtToken, requestType, TTL, credentials) {
-    this.#jwtToken = jwtToken;
-    this.#targetAddress = targetAddress;
-    this.#requestType = requestType;
-    this.#TTL = TTL;
+  constructor({
+    targetAddress,
+    jwtToken,
+    requestType,
+    TTL,
+    clientCertificate,
+    credentials = null,
+  }) {
+    this.jwtToken = jwtToken;
+    this.targetAddress = targetAddress;
+    this.requestType = requestType;
+    this.TTL = TTL;
 
     // 1. Create connection channel
-    const packageDefinition = protoLoader.loadSync("service.proto");
-    this.#proto = grpc.loadPackageDefinition(packageDefinition);
-    this.createChannel(credentials);
+    if (credentials) {
+      const packageDefinition = protoLoader.loadSync("service.proto");
+      this.#proto = grpc.loadPackageDefinition(packageDefinition);
+      this.createChannel(credentials);
+    } else {
+      this.clientCertificate = clientCertificate;
+    }
   }
 
   /**
    * @description Creates new channel for connection
    */
-  createChannel(credentials) {
+  private createChannel(credentials) {
     this.#channel = new this.#proto.ClientService(
-      this.#targetAddress,
+      this.targetAddress,
       credentials
     );
   }
@@ -39,9 +52,9 @@ export class Connection {
   /**
    * @description Sends data on opened channel
    */
-  async send(data) {
+  public async send(url, options) {
     const request = {
-      payload: serializeRequest(data),
+      payload: serializeRequest(url, options),
     };
 
     const response = await new Promise((resolve, reject) => {
@@ -51,10 +64,9 @@ export class Connection {
         }
         resolve(response);
       });
-    })
-      .then((data) => data)
-      .catch((e) => console.log(e));
-
+    });
     console.log(response);
+
+    return response;
   }
 }

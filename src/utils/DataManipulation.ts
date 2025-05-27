@@ -3,7 +3,7 @@ import crypto from "crypto";
 /**
  * @description Encrypts data with given public key
  */
-export const encryptDataWithPublicKey = (data, publicKeyPem) => {
+export const encryptDataWithPublicKey = (data: any, publicKeyPem: string) => {
   console.log(data, publicKeyPem);
   const bufferData = Buffer.from(data, "utf8");
   const encrypted = crypto.publicEncrypt(
@@ -43,15 +43,33 @@ export const decryptDataWithPrivateKey = (encryptedData, privateKeyPem) => {
   }
 };
 
+// URL sanitization utility to prevent RCE
+export const checkUrl = (
+  url: string,
+  ALLOWED_DOMAINS: Array<string>
+): boolean => {
+  const parsed = new URL(url);
+  if (!ALLOWED_DOMAINS.includes(parsed.hostname)) {
+    return false;
+  }
+  return true;
+};
+
 /**
  * @description Serializes Json formatted request into binary payload
  */
-export const serializeRequest = (
-  jsonData,
-  contentType = "application/json"
-) => {
+export const serializeRequest = (url: string, options?: any) => {
   const encoder = new TextEncoder();
-  const contentTypeBytes = encoder.encode(contentType);
+  const contentTypeBytes = encoder.encode("application/json");
+
+  const jsonData = options
+    ? {
+        url: url,
+        options: options,
+      }
+    : {
+        url: url,
+      };
 
   // encode json
   const jsonString = JSON.stringify(jsonData);

@@ -18,19 +18,19 @@ message EmptyMessage {}
 
 // Basic communication
 message PublicKey {
-    string public_key = 1;
+    string publicKey = 1;
 }
 
 message ConnectionRequest {
-    string encrypted_certificate = 1;
-    string request_type = 2;
+    string encryptedCertificate = 1;
+    string requestType = 2;
     string TTL = 3;
-    string adress = 4; // no need for encryption because of traffic sniffing will show destination anyway
+    string address = 4; // no need for encryption because of traffic sniffing will show destination anyway
 }
 
 message ConnectionApproval {
-    optional ApprovalStatus approval_status = 1;
-    optional string encrypted_jwt_token = 2;
+    optional ApprovalStatus approvalStatus = 1;
+    optional string encryptedJwtToken = 2;
 }
 
 // ====================================

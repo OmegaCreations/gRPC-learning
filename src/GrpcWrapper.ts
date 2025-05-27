@@ -1,31 +1,37 @@
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
-import { encryptDataWithPublicKey } from "./utils/DataManipulation";
+import {
+  decryptDataWithPrivateKey,
+  encryptDataWithPublicKey,
+} from "./utils/DataManipulation";
 
 // Outer classes imports
 import { ConnectionManager } from "./ConnectionManager";
+import {
+  ConnectionRequest,
+  ConnectionResponse,
+  GrpcWrapperConfig,
+} from "./wrapper";
+import { Connection } from "./Connection";
 
-class gRPCSafeWrapper {
+export class gRPCSafeWrapper {
   // private data for this service
-  #serviceCertificate;
-  #publicKey;
-  #privateKey;
+  #serviceCertificate: string;
+  #publicKey: string;
+  #privateKey: string;
 
   // connection with central system
   #proto;
   #centralSystemClient;
-  #centralPublicKey;
-  #centralSystemAddress = "localhost:50051";
+  #centralPublicKey: string;
+  #centralSystemAddress: string = "localhost:50051";
 
   // Connection manager creates sender and receiver objects
-  #connectionManager;
+  #connectionManager: ConnectionManager;
 
-  constructor(
-    serviceCertificate,
-    publicKey,
-    privateKey,
-    listenerPort = "50052"
-  ) {
+  constructor(GRPCWrapperConfig: GrpcWrapperConfig) {
+    const { serviceCertificate, publicKey, privateKey, listenerPort } =
+      GRPCWrapperConfig;
     if (!serviceCertificate || !publicKey || !privateKey) {
       throw new Error(
         "You need to provide all nessesary data: serviceCertificate, publicKey, privateKey"
@@ -54,7 +60,7 @@ class gRPCSafeWrapper {
 
     // listener ------------------------------------------------
     this.#connectionManager = new ConnectionManager(
-      listenerPort,
+      listenerPort || 50052,
       this.#serviceCertificate
     );
   }
@@ -65,15 +71,18 @@ class gRPCSafeWrapper {
   /**
    * @description Requests Central System for it's public key
    */
-  async #requestCentralPublicKey() {
-    this.#centralPublicKey = await new Promise((resolve, reject) => {
+  private async requestCentralPublicKey(): Promise<void> {
+    this.#centralPublicKey = await new Promise<string>((resolve, reject) => {
       this.#centralSystemClient.getPublicKey({}, (err, response) => {
-        if (err) reject("Error getting public key:", err);
-        resolve(response.public_key);
+        if (err) {
+          reject("Error getting public key: " + err);
+        } else {
+          resolve(response.publicKey as string);
+        }
       });
     })
       .then((data) => data)
-      .catch((e) => console.log(e));
+      .catch(() => "");
   }
 
   // ====================================
@@ -82,18 +91,22 @@ class gRPCSafeWrapper {
   /**
    * @description Requests a new client-client connection to Central System
    */
-  async requestConnection(requestType, address, TTL) {
+  async requestConnection(
+    requestType,
+    address,
+    TTL
+  ): Promise<Connection | null> {
     // 1. Asks Central system for it's public key
     if (!this.#centralPublicKey) {
       try {
-        await this.#requestCentralPublicKey();
+        await this.requestCentralPublicKey();
       } catch (e) {
         console.log(e);
       }
     }
 
-    // 2. Encrypts it's certificatee
-    let encryptedCertificate;
+    // 2. Encrypts it's certificate with Central System's public key
+    let encryptedCertificate: string;
     try {
       encryptedCertificate = encryptDataWithPublicKey(
         this.#serviceCertificate,
@@ -101,59 +114,76 @@ class gRPCSafeWrapper {
       );
     } catch (e) {
       console.error("Encryption failed:", e);
-      return;
+      return null;
     }
 
     // 3. Create connection request object
-    const request = {
-      encrypted_certificate: encryptedCertificate,
-      request_type: requestType,
+    const request: ConnectionRequest = {
+      encryptedCertificate: encryptedCertificate,
+      requestType: requestType,
       TTL: TTL, // TTL -> mostly time in days/weeks like '1d'
-      adress: address,
+      address: address,
     };
 
     // 4. Send connection request to Central System and wait for Approval with token
-    const newConnectionResponse = await new Promise((resolve, reject) => {
-      this.#centralSystemClient.requestConnection(request, (err, response) => {
-        if (err) {
-          return reject("Connection request failed: " + err.message);
-        }
-        resolve(response);
-      });
-    })
+    const newConnectionResponse = await new Promise<ConnectionResponse>(
+      (resolve, reject) => {
+        this.#centralSystemClient.requestConnection(
+          request,
+          (err, response) => {
+            if (err) {
+              return reject("Connection request failed: " + err.message);
+            }
+            resolve(response);
+          }
+        );
+      }
+    )
       .then((data) => data)
       .catch((e) => console.log(e));
 
+    if (!newConnectionResponse) {
+      console.log("No response from Central System for new connection");
+      return null;
+    }
+
     // 5. Check connection status
-    if (newConnectionResponse.approval_status === "APPROVED") {
-      console.log("[response approval]", connectionApproval);
+    if (newConnectionResponse.approvalStatus === "APPROVED") {
+      console.log("[response approval]", newConnectionResponse);
+
+      // 5.5 Decrypt JWT token with private key
+      const decryptedJwt = decryptDataWithPrivateKey(
+        newConnectionResponse.encryptedJwtToken,
+        this.#privateKey
+      );
+
+      if (!decryptedJwt) {
+        console.log("Decryption of JWT token failed");
+        return null;
+      }
 
       // 6. Create new connection in connection manager
-      if (!newConnectionResponse.encrypted_jwt_token) {
+      if (!newConnectionResponse.encryptedJwtToken) {
         console.log("Cannot receive security data from Central System");
         return null;
       }
 
-      const conn = this.#connectionManager.createSender(
-        connectionApproval.encrypted_jwt_token,
-        address
+      const conn: Connection = this.#connectionManager.createSenderConnection(
+        address,
+        decryptedJwt,
+        requestType,
+        TTL
       );
 
       // 7. returns Connection object for user to manage
       return conn;
     } else {
-      console.log("[response approval error]", connectionApproval);
+      console.log("[response approval error]", newConnectionResponse);
       return null;
     }
   }
+
+  public getMiddleware() {
+    return this.#connectionManager.getMiddleware();
+  }
 }
-
-/// USAGE
-const wrapper = new gRPCSafeWrapper(
-  "CERT1234",
-  "PUBLIC_KEY1234",
-  "PRIVATE_KEY1234",
-  "1234"
-);
-
-const conn = wrapper.requestConnection("POST", "localhost:5053", "1d");
