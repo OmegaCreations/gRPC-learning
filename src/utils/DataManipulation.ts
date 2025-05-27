@@ -23,7 +23,10 @@ export const encryptDataWithPublicKey = (data: any, publicKeyPem: string) => {
  * @param {string} privateKeyPem - PEM formatted private key
  * @returns {string} Decrypted data in UTF-8 format
  */
-export const decryptDataWithPrivateKey = (encryptedData, privateKeyPem) => {
+export const decryptDataWithPrivateKey = (
+  encryptedData: string,
+  privateKeyPem: string
+) => {
   try {
     const bufferData = Buffer.from(encryptedData, "base64");
 
@@ -90,7 +93,7 @@ export const serializeRequest = (url: string, options?: any) => {
 /**
  * @description Deserializes binary payload to Json formated request
  */
-export const deserializeRequest = (payload) => {
+export const deserializeRequest = (payload: any) => {
   const view = new Uint8Array(payload);
   const decoder = new TextDecoder();
 

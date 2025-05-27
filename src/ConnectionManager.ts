@@ -31,15 +31,19 @@ export class ConnectionManager {
       oneofs: true,
     });
 
-    const proto = grpc.loadPackageDefinition(packageDefinition);
-    const clientService = proto.clientService;
+    const proto = grpc.loadPackageDefinition(packageDefinition) as any;
+    const clientService = proto.clientService || proto.ClientService;
+    if (!clientService || !clientService.service) {
+      throw new Error("Could not find clientService definition in proto");
+    }
+    const clientServiceDefinition = clientService.service;
 
     this.#port = listenerPort;
     this.#certificate = certificate;
 
     this.#listener = new grpc.Server();
 
-    this.#listener.addService(clientService, {
+    this.#listener.addService(clientServiceDefinition, {
       sendConnectionData: this.handleNewReceiverConnection.bind(this),
       sendPayload: this.receivePayload.bind(this),
     });
@@ -50,8 +54,12 @@ export class ConnectionManager {
       null, // no root certificates, we verify only client certs
       [
         {
-          cert_chain: fs.readFileSync("server.crt"),
-          private_key: fs.readFileSync("server.key"),
+          cert_chain: fs.readFileSync(
+            "C:\\Users\\Maks\\Desktop\\Projects\\gRPC\\testing\\simple-connection-test\\certs\\clientReceiver.crt"
+          ),
+          private_key: fs.readFileSync(
+            "C:\\Users\\Maks\\Desktop\\Projects\\gRPC\\testing\\simple-connection-test\\certs\\clientReceiver_private.key"
+          ),
         },
       ],
       true // requires client certificate
@@ -61,11 +69,26 @@ export class ConnectionManager {
       `localhost:${this.#port}`,
       listenerCredentials,
       (err: any, port: any) => {
+        if (err) {
+          console.error("Błąd podczas bindowania portu:", err);
+          return;
+        }
+
+        // 1. Najpierw uruchom serwer
+        this.#listener.start();
+
+        // 2. Następnie uzyskaj dostęp do serwera HTTP2
         const http2Server = this.#listener._http2Server;
 
-        http2Server.on("secureConnection", (socket) => {
+        if (!http2Server) {
+          console.error("Serwer HTTP2 nie jest dostępny");
+          return;
+        }
+
+        // 3. Teraz możesz bezpiecznie dodać listener
+        http2Server.on("secureConnection", (socket: any) => {
           try {
-            const clientCert = socket.getPeerCertificate(true) as string; // retrieve client certificate
+            const clientCert = socket.getPeerCertificate(true);
             if (!clientCert || !this.isValidClientCert(clientCert)) {
               socket.destroy();
             }
@@ -74,7 +97,7 @@ export class ConnectionManager {
           }
         });
 
-        this.#listener.start();
+        console.log(`Serwer nasłuchuje na porcie ${port}`);
       }
     );
   }
@@ -83,7 +106,7 @@ export class ConnectionManager {
   public createSenderConnection(
     targetAddress: string,
     jwtToken: string,
-    requestType: RequestType,
+    requestType: RequestType | string,
     TTL: string
   ): Connection {
     const existingConnection = this.#openSendingConnections.get(targetAddress);
@@ -148,11 +171,11 @@ export class ConnectionManager {
   }
 
   private createReceiverConnection(
-    sourceAddress,
-    jwtToken,
-    requestType,
-    TTL,
-    clientCertificate
+    sourceAddress: string,
+    jwtToken: string,
+    requestType: RequestType | string,
+    TTL: string,
+    clientCertificate: string
   ) {
     const connection = new Connection({
       targetAddress: sourceAddress,
@@ -165,13 +188,13 @@ export class ConnectionManager {
     this.#openReceivingConnections.set(sourceAddress, connection);
   }
 
-  private createReceiverCredentials(token) {
+  private createReceiverCredentials(token: string) {
     return grpc.credentials.createSsl(Buffer.from(token));
   }
 
   // Receives payload from the sender and forwards it to the target address
   // This method is called by the gRPC server when a payload is sent via the `sendPayload` RPC method
-  private receivePayload(call, callback) {
+  private receivePayload(call: any, callback: any) {
     try {
       const { sourceAddress, payload } = call.request;
 
@@ -250,7 +273,7 @@ export class ConnectionManager {
 
         next();
       } catch (error) {
-        res.status(401).json({ error: "Unauthorized: " + error.message });
+        res.status(401).json({ error: "Unauthorized: " + error });
       }
     };
   }
@@ -274,7 +297,7 @@ export class ConnectionManager {
     try {
       return jwt.verify(jwtToken, this.#certificate);
     } catch (error) {
-      throw new Error("Invalid JWT: " + error.message);
+      throw new Error("Invalid JWT: " + error);
     }
   }
 

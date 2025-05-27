@@ -1,7 +1,7 @@
 export interface ConnectionRequest {
   encryptedCertificate: string;
-  requestType: string;
-  TTL: number;
+  requestType: RequestType | string;
+  TTL: string;
   address: string;
 }
 

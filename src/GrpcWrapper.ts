@@ -11,6 +11,7 @@ import {
   ConnectionRequest,
   ConnectionResponse,
   GrpcWrapperConfig,
+  RequestType,
 } from "./wrapper";
 import { Connection } from "./Connection";
 
@@ -23,7 +24,7 @@ export class gRPCSafeWrapper {
   // connection with central system
   #proto;
   #centralSystemClient;
-  #centralPublicKey: string;
+  #centralPublicKey: string = "";
   #centralSystemAddress: string = "localhost:50051";
 
   // Connection manager creates sender and receiver objects
@@ -44,7 +45,7 @@ export class gRPCSafeWrapper {
     this.#privateKey = privateKey;
 
     // connection with central system ------------------------------------------------
-    const packageDefinition = protoLoader.loadSync("central.proto", {
+    const packageDefinition = protoLoader.loadSync("./central.proto", {
       keepCase: true,
       longs: String,
       enums: String,
@@ -73,7 +74,7 @@ export class gRPCSafeWrapper {
    */
   private async requestCentralPublicKey(): Promise<void> {
     this.#centralPublicKey = await new Promise<string>((resolve, reject) => {
-      this.#centralSystemClient.getPublicKey({}, (err, response) => {
+      this.#centralSystemClient.getPublicKey({}, (err: any, response: any) => {
         if (err) {
           reject("Error getting public key: " + err);
         } else {
@@ -92,9 +93,9 @@ export class gRPCSafeWrapper {
    * @description Requests a new client-client connection to Central System
    */
   async requestConnection(
-    requestType,
-    address,
-    TTL
+    requestType: RequestType | string,
+    address: string,
+    TTL: string
   ): Promise<Connection | null> {
     // 1. Asks Central system for it's public key
     if (!this.#centralPublicKey) {
@@ -130,7 +131,7 @@ export class gRPCSafeWrapper {
       (resolve, reject) => {
         this.#centralSystemClient.requestConnection(
           request,
-          (err, response) => {
+          (err: any, response: any) => {
             if (err) {
               return reject("Connection request failed: " + err.message);
             }
@@ -148,7 +149,10 @@ export class gRPCSafeWrapper {
     }
 
     // 5. Check connection status
-    if (newConnectionResponse.approvalStatus === "APPROVED") {
+    if (
+      newConnectionResponse.approvalStatus === "APPROVED" &&
+      newConnectionResponse.encryptedJwtToken
+    ) {
       console.log("[response approval]", newConnectionResponse);
 
       // 5.5 Decrypt JWT token with private key
