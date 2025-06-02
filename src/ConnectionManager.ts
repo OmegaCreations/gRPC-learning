@@ -48,8 +48,7 @@ export class ConnectionManager {
       sendPayload: this.receivePayload.bind(this),
     });
 
-    // create a gRPC server listener --------------------------------------
-    // with a "hack" that allows dynamic certificate validation
+    // gRPC credentials
     const listenerCredentials = grpc.ServerCredentials.createSsl(
       null, // no root certificates, we verify only client certs
       [
@@ -65,39 +64,47 @@ export class ConnectionManager {
       true // requires client certificate
     );
 
+    // create a gRPC server listener --------------------------------------
+    // with a "hack" that allows dynamic certificate validation
     this.#listener.bindAsync(
       `localhost:${this.#port}`,
       listenerCredentials,
-      (err: any, port: any) => {
+      (err: Error | null, port: number) => {
         if (err) {
-          console.error("Błąd podczas bindowania portu:", err);
+          console.error("Error during port binding:", err);
           return;
         }
 
-        // 1. Najpierw uruchom serwer
-        this.#listener.start();
+        console.log(`gRPC Server listens on ${port}`);
 
-        // 2. Następnie uzyskaj dostęp do serwera HTTP2
-        const http2Server = this.#listener._http2Server;
+        // We check if the HTTP2 server is available after asynchronous binding
+        const check = setInterval(() => {
+          const http2ServersMap = (this.#listener as any).http2Servers as Map<
+            string,
+            import("http2").Http2Server
+          >;
+          const [http2Server] = http2ServersMap.keys();
+          if (http2Server) {
+            clearInterval(check);
+            console.log(
+              "HTTP2 server avaible - now connects .on('secureConnection')"
+            );
 
-        if (!http2Server) {
-          console.error("Serwer HTTP2 nie jest dostępny");
-          return;
-        }
+            (http2Server as any).on("secureConnection", (socket: any) => {
+              try {
+                console.log("New connection");
 
-        // 3. Teraz możesz bezpiecznie dodać listener
-        http2Server.on("secureConnection", (socket: any) => {
-          try {
-            const clientCert = socket.getPeerCertificate(true);
-            if (!clientCert || !this.isValidClientCert(clientCert)) {
-              socket.destroy();
-            }
-          } catch (error) {
-            socket.destroy();
+                // we get the client certificate and check if it's valid before allowing the connection
+                const clientCert = socket.getPeerCertificate(true);
+                if (!clientCert || !this.isValidClientCert(clientCert)) {
+                  socket.destroy();
+                }
+              } catch {
+                socket.destroy();
+              }
+            });
           }
-        });
-
-        console.log(`Serwer nasłuchuje na porcie ${port}`);
+        }, 50);
       }
     );
   }

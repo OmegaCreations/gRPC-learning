@@ -108,7 +108,6 @@ server.bindAsync(
     true
   ),
   () => {
-    server.start();
     console.log("Central system running on port 50051");
   }
 );
