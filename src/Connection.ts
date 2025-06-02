@@ -1,8 +1,8 @@
 import { serializeRequest } from "./utils/DataManipulation";
 import { RequestType } from "./wrapper";
 
-const grpc = require("@grpc/grpc-js");
-const protoLoader = require("@grpc/proto-loader");
+import grpc from "@grpc/grpc-js";
+import protoLoader from "@grpc/proto-loader";
 
 interface ConnectionOptions {
   targetAddress: string;
@@ -22,8 +22,8 @@ export class Connection {
   TTL: string;
   clientCertificate: string | null = null;
 
-  #proto: any;
-  #channel: any;
+  private proto: any;
+  private channel: any;
 
   constructor({
     targetAddress,
@@ -40,8 +40,8 @@ export class Connection {
 
     // 1. Create connection channel
     if (credentials) {
-      const packageDefinition = protoLoader.loadSync("service.proto");
-      this.#proto = grpc.loadPackageDefinition(packageDefinition);
+      const packageDefinition = protoLoader.loadSync("./central.proto");
+      this.proto = grpc.loadPackageDefinition(packageDefinition);
       this.createChannel(credentials);
     } else if (clientCertificate) {
       this.clientCertificate = clientCertificate;
@@ -52,7 +52,7 @@ export class Connection {
    * @description Creates new channel for connection
    */
   private createChannel(credentials: any) {
-    this.#channel = new this.#proto.ClientService(
+    this.channel = new this.proto.ClientService(
       this.targetAddress,
       credentials
     );
@@ -67,7 +67,7 @@ export class Connection {
     };
 
     const response = await new Promise((resolve, reject) => {
-      this.#channel.sendPayload(request, (err: any, response: any) => {
+      this.channel.sendPayload(request, (err: any, response: any) => {
         if (err) {
           return reject("Sending data failed: " + err.message);
         }

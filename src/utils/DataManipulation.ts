@@ -46,6 +46,71 @@ export const decryptDataWithPrivateKey = (
   }
 };
 
+/**
+ * @description Encrypts data with given public key and AES hybrid encryption
+ */
+export const encryptHybrid = (data: string, publicKeyPem: string) => {
+  const aesKey = crypto.randomBytes(32); // 256-bite AES key
+  const iv = crypto.randomBytes(16); // 128-byte vector for AES CBC mode
+
+  const cipher = crypto.createCipheriv("aes-256-cbc", aesKey, iv);
+  const encryptedData = Buffer.concat([
+    cipher.update(data, "utf8"),
+    cipher.final(),
+  ]);
+
+  const encryptedKey = crypto.publicEncrypt(
+    {
+      key: publicKeyPem,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    aesKey
+  );
+
+  return {
+    encryptedData: encryptedData.toString("base64"),
+    encryptedKey: encryptedKey.toString("base64"),
+    iv: iv.toString("base64"),
+  };
+};
+
+/**
+ * @description Decrypts data with given private key and AES hybrid decryption
+ * @param {string} encryptedData - Base64 encoded encrypted data
+ * @param {string} encryptedKey - Base64 encoded encrypted AES key
+ * @param {string} iv - Base64 encoded initialization vector
+ * @param {string} privateKeyPem - PEM formatted private key
+ * @returns {string} Decrypted data in UTF-8 format
+ */
+export const decryptHybrid = (
+  encryptedData: string,
+  encryptedKey: string,
+  iv: string,
+  privateKeyPem: string
+) => {
+  const aesKey = crypto.privateDecrypt(
+    {
+      key: privateKeyPem,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    Buffer.from(encryptedKey, "base64")
+  );
+
+  const decipher = crypto.createDecipheriv(
+    "aes-256-cbc",
+    aesKey,
+    Buffer.from(iv, "base64")
+  );
+  const decryptedData = Buffer.concat([
+    decipher.update(Buffer.from(encryptedData, "base64")),
+    decipher.final(),
+  ]);
+
+  return decryptedData.toString("utf8");
+};
+
 // URL sanitization utility to prevent RCE
 export const checkUrl = (
   url: string,

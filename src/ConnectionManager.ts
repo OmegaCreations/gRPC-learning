@@ -1,6 +1,7 @@
 import { Connection } from "./Connection";
 import {
   checkUrl,
+  decryptHybrid,
   deserializeRequest,
   serializeRequest,
 } from "./utils/DataManipulation";
@@ -8,21 +9,30 @@ import axios from "axios";
 import { NewConnectionData, RequestType } from "./wrapper";
 import { Request, Response, NextFunction } from "express";
 
-const grpc = require("@grpc/grpc-js");
-const protoLoader = require("@grpc/proto-loader");
-const jwt = require("jsonwebtoken");
-const fs = require("fs");
+import grpc from "@grpc/grpc-js";
+import protoLoader from "@grpc/proto-loader";
+import jwt from "jsonwebtoken";
+import fs from "fs";
 
 export class ConnectionManager {
-  #certificate: string;
+  private certificate: string;
   // List of allowed client certificates get from the central system
-  #allowedClientCerts: Map<string, string> = new Map();
-  #openSendingConnections: Map<string, Connection> = new Map();
-  #openReceivingConnections: Map<string, Connection> = new Map();
-  #port: number;
-  #listener;
+  private allowedClientCerts: Map<string, string> = new Map();
+  private openSendingConnections: Map<string, Connection> = new Map();
+  private openReceivingConnections: Map<string, Connection> = new Map();
+  private port: number;
+  private privateKey: string;
 
-  constructor(listenerPort: number = 50052, certificate: string) {
+  private insecureListener: grpc.Server;
+  private secureListener: grpc.Server;
+
+  constructor(
+    listenerPort: number = 50052,
+    certificate: string,
+    privateKey: string
+  ) {
+    this.privateKey = privateKey;
+
     const packageDefinition = protoLoader.loadSync("./central.proto", {
       keepCase: true,
       longs: String,
@@ -38,14 +48,17 @@ export class ConnectionManager {
     }
     const clientServiceDefinition = clientService.service;
 
-    this.#port = listenerPort;
-    this.#certificate = certificate;
+    this.port = listenerPort;
+    this.certificate = certificate;
 
-    this.#listener = new grpc.Server();
-
-    this.#listener.addService(clientServiceDefinition, {
-      sendConnectionData: this.handleNewReceiverConnection.bind(this),
+    this.secureListener = new grpc.Server();
+    this.secureListener.addService(clientServiceDefinition, {
       sendPayload: this.receivePayload.bind(this),
+    });
+
+    this.insecureListener = new grpc.Server();
+    this.insecureListener.addService(clientServiceDefinition, {
+      sendConnectionData: this.handleNewReceiverConnection.bind(this),
     });
 
     // gRPC credentials
@@ -66,8 +79,8 @@ export class ConnectionManager {
 
     // create a gRPC server listener --------------------------------------
     // with a "hack" that allows dynamic certificate validation
-    this.#listener.bindAsync(
-      `localhost:${this.#port}`,
+    this.secureListener.bindAsync(
+      `localhost:${this.port}`,
       listenerCredentials,
       (err: Error | null, port: number) => {
         if (err) {
@@ -79,11 +92,10 @@ export class ConnectionManager {
 
         // We check if the HTTP2 server is available after asynchronous binding
         const check = setInterval(() => {
-          const http2ServersMap = (this.#listener as any).http2Servers as Map<
-            string,
-            import("http2").Http2Server
-          >;
-          const [http2Server] = http2ServersMap.keys();
+          const http2ServersMap = (this.secureListener as any)
+            .http2Servers as Map<string, import("http2").Http2Server>;
+          const [http2Server] = Array.from(http2ServersMap.keys());
+
           if (http2Server) {
             clearInterval(check);
             console.log(
@@ -107,6 +119,20 @@ export class ConnectionManager {
         }, 50);
       }
     );
+
+    this.insecureListener.bindAsync(
+      `localhost:${this.port + 1}`,
+      grpc.ServerCredentials.createInsecure(),
+      (err: Error | null, port: number) => {
+        if (err) {
+          console.error("Error during port binding:", err);
+          return;
+        }
+
+        console.log(`gRPC Insecure Server listens on ${port}`);
+        this.insecureListener.start();
+      }
+    );
   }
 
   // Creates a gRPC sender connection
@@ -116,7 +142,7 @@ export class ConnectionManager {
     requestType: RequestType | string,
     TTL: string
   ): Connection {
-    const existingConnection = this.#openSendingConnections.get(targetAddress);
+    const existingConnection = this.openSendingConnections.get(targetAddress);
     if (existingConnection) {
       return existingConnection;
     }
@@ -131,7 +157,7 @@ export class ConnectionManager {
       credentials,
     });
 
-    this.#openSendingConnections.set(targetAddress, connection);
+    this.openSendingConnections.set(targetAddress, connection);
 
     return connection;
   }
@@ -144,19 +170,23 @@ export class ConnectionManager {
   // handles incoming receiver connection requests
   private handleNewReceiverConnection(call: any, callback: any) {
     try {
-      const { encryptedJwtToken } = call.request;
+      const jwtToken = decryptHybrid(
+        call.request.encryptedJwtToken,
+        call.request.encryptedAesKey,
+        call.request.iv,
+        this.privateKey
+      );
 
-      const { jwtToken } = jwt.verify(encryptedJwtToken, this.#certificate);
       const {
         clientCertificate,
         requestType,
         TTL,
         sourceAddress,
-      }: NewConnectionData = jwt.verify(jwtToken, this.#certificate);
+      }: NewConnectionData = jwt.verify(jwtToken, this.certificate);
 
       // adds new connection to the open receiving connections
       // and allows the client certificate to connect
-      this.#allowedClientCerts.set(sourceAddress, clientCertificate);
+      this.allowedClientCerts.set(sourceAddress, clientCertificate);
       this.createReceiverConnection(
         sourceAddress,
         jwtToken,
@@ -174,7 +204,7 @@ export class ConnectionManager {
 
   private isValidClientCert(clientCert: string): boolean {
     // Check if the client certificate is in the list of allowed certificates
-    return this.#allowedClientCerts.has(clientCert);
+    return this.allowedClientCerts.has(clientCert);
   }
 
   private createReceiverConnection(
@@ -192,7 +222,7 @@ export class ConnectionManager {
       clientCertificate,
     });
 
-    this.#openReceivingConnections.set(sourceAddress, connection);
+    this.openReceivingConnections.set(sourceAddress, connection);
   }
 
   private createReceiverCredentials(token: string) {
@@ -205,7 +235,7 @@ export class ConnectionManager {
     try {
       const { sourceAddress, payload } = call.request;
 
-      if (!this.#openReceivingConnections.get(sourceAddress)) {
+      if (!this.openReceivingConnections.get(sourceAddress)) {
         console.log(
           "Invalid connection: No opened channel for address: ",
           sourceAddress
@@ -294,15 +324,15 @@ export class ConnectionManager {
   private findConnectionByToken(token: string): Connection | undefined {
     // Szukaj we wszystkich aktywnych połączeniach
     return [
-      ...this.#openSendingConnections.values(),
-      ...this.#openReceivingConnections.values(),
+      ...Array.from(this.openSendingConnections.values()),
+      ...Array.from(this.openReceivingConnections.values()),
     ].find((conn) => conn.jwtToken === token);
   }
 
   // Verifies the JWT token using the server's certificate
   private verifyJwt(jwtToken: string): any {
     try {
-      return jwt.verify(jwtToken, this.#certificate);
+      return jwt.verify(jwtToken, this.certificate);
     } catch (error) {
       throw new Error("Invalid JWT: " + error);
     }
