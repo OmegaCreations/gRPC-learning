@@ -182,7 +182,9 @@ export class ConnectionManager {
         requestType,
         TTL,
         sourceAddress,
-      }: NewConnectionData = jwt.verify(jwtToken, this.certificate);
+      }: NewConnectionData = jwt.verify(jwtToken, this.certificate, {
+        algorithms: ["HS256"],
+      });
 
       // adds new connection to the open receiving connections
       // and allows the client certificate to connect

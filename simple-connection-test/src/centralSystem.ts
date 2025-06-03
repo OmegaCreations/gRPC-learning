@@ -98,7 +98,6 @@ class CentralSystemImpl {
 
       // 4. Generujemy JWT
       const peer = call.getPeer().split(":");
-      // w parts będzie: ["ipv4", "127.0.0.1", "52344"]
       const clientIp = peer.length === 3 ? peer[1] : "";
       const clientPort = peer.length === 3 ? peer[2] : "";
 
@@ -108,8 +107,11 @@ class CentralSystemImpl {
         TTL: call.request.TTL,
         sourceAddress: clientIp + ":" + clientPort,
       };
-      const token = jwt.sign(tokenPayload, ALLOWED_CERTIFICATES[1]);
-      console.log(decryptedCert);
+
+      const token = jwt.sign(tokenPayload, ALLOWED_CERTIFICATES[1], {
+        algorithm: "HS256",
+      });
+
       // hybrid encryption of the JWT token
       const senderPublicKey = crypto
         .createPublicKey(ALLOWED_CERTIFICATES[0])
