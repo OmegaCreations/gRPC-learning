@@ -104,7 +104,7 @@ export class ConnectionManager {
 
             (http2Server as any).on("secureConnection", (socket: any) => {
               try {
-                console.log("New connection");
+                console.log("[NEW CONNECTION] secureConnection event fired");
 
                 // we get the client certificate and check if it's valid before allowing the connection
                 const clientCert = socket.getPeerCertificate(true);
@@ -142,12 +142,13 @@ export class ConnectionManager {
     requestType: RequestType | string,
     TTL: string
   ): Connection {
+    console.log("Creating sender connection for:", targetAddress);
     const existingConnection = this.openSendingConnections.get(targetAddress);
     if (existingConnection) {
       return existingConnection;
     }
 
-    const credentials = this.createSenderCredentials(jwtToken);
+    const credentials = this.createSenderCredentials();
     const connection: Connection = new Connection({
       targetAddress,
       jwtToken,
@@ -163,8 +164,15 @@ export class ConnectionManager {
   }
 
   // creates gRPC credentials for sender connection
-  private createSenderCredentials(token: string) {
-    return grpc.credentials.createSsl(Buffer.from(token));
+  private createSenderCredentials() {
+    return grpc.credentials.createSsl(
+      Buffer.alloc(0), // no root certificates
+      fs.readFileSync("./certs/clientSender_private.key"),
+      fs.readFileSync("./certs/clientSender.crt"),
+      {
+        checkServerIdentity: () => undefined,
+      }
+    );
   }
 
   // handles incoming receiver connection requests
@@ -188,14 +196,15 @@ export class ConnectionManager {
 
       // adds new connection to the open receiving connections
       // and allows the client certificate to connect
+      console.log("New receiver connection request from:", sourceAddress);
       this.allowedClientCerts.set(sourceAddress, clientCertificate);
-      this.createReceiverConnection(
-        sourceAddress,
-        jwtToken,
-        requestType,
-        TTL,
-        clientCertificate
-      );
+      // this.createReceiverConnection(
+      //   sourceAddress,
+      //   jwtToken,
+      //   requestType,
+      //   TTL,
+      //   clientCertificate
+      // );
 
       callback(null, {});
     } catch (err) {
@@ -216,6 +225,7 @@ export class ConnectionManager {
     TTL: string,
     clientCertificate: string
   ) {
+    console.log("Creating receiver connection for:", sourceAddress);
     const connection = new Connection({
       targetAddress: sourceAddress,
       jwtToken,
@@ -234,6 +244,7 @@ export class ConnectionManager {
   // Receives payload from the sender and forwards it to the target address
   // This method is called by the gRPC server when a payload is sent via the `sendPayload` RPC method
   private receivePayload(call: any, callback: any) {
+    console.log("Received new payload");
     try {
       const { sourceAddress, payload } = call.request;
 

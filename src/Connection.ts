@@ -42,6 +42,7 @@ export class Connection {
     if (credentials) {
       const packageDefinition = protoLoader.loadSync("./central.proto");
       this.proto = grpc.loadPackageDefinition(packageDefinition);
+      console.log("Creating channel for:", targetAddress);
       this.createChannel(credentials);
     } else if (clientCertificate) {
       this.clientCertificate = clientCertificate;

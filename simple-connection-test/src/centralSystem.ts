@@ -97,16 +97,17 @@ class CentralSystemImpl {
       // TODO ...
 
       // 4. Generujemy JWT
-      const peer = call.getPeer().split(":");
-      const clientIp = peer.length === 3 ? peer[1] : "";
-      const clientPort = peer.length === 3 ? peer[2] : "";
+      const peer = call.getPeer();
+      console.log("Peer info:", peer);
 
       const tokenPayload = {
         clientCertificate: decryptedCert,
         requestType: call.request.requestType,
         TTL: call.request.TTL,
-        sourceAddress: clientIp + ":" + clientPort,
+        sourceAddress: peer,
       };
+
+      console.log("Token payload:", tokenPayload);
 
       const token = jwt.sign(tokenPayload, ALLOWED_CERTIFICATES[1], {
         algorithm: "HS256",
